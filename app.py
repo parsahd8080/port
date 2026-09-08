@@ -1,8 +1,7 @@
-# ریشه اصلی ربات وریتی
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -10,48 +9,25 @@ app = Flask(__name__)
 # ================================================
 # 🔑 توکن‌ها از متغیرهای محیطی
 # ================================================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
+BOT_TOKEN = os.environ.get("BALE_BOT_TOKEN", "")
 if not BOT_TOKEN:
-    print("❌ BOT_TOKEN تنظیم نشده!")
+    print("❌ BALE_BOT_TOKEN تنظیم نشده!")
     exit(1)
 
-if not OPENROUTER_API_KEY:
-    print("❌ OPENROUTER_API_KEY تنظیم نشده!")
-    exit(1)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 BASE_URL = f"https://tapi.bale.ai/bot{BOT_TOKEN}"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ================================================
-# 👑 اطلاعات مود
+# 👑 سازنده
 # ================================================
 CREATOR = "@AghaBanafshii"
-CREATOR_NAME = "آقا بنفشی"
-
-MOD_LINKS = {
-    "curseforge": "https://www.curseforge.com/minecraft/mc-mods/verity-je",
-    "modrinth": "https://modrinth.com/project/on1Y0osD"
-}
 
 # ================================================
-# کانال های عضویت اجباری
+# 📁 حافظه
 # ================================================
-REQUIRED_CHANNELS = [
-    {"id": 4467089778, "username": "verityir1"},
-    {"id": 6184186116, "username": "verity_bot"}
-]
-
-# ================================================
-# 📁 حافظه (ذخیره در Railway Volume یا حافظه موقت)
-# ================================================
-MEMORY_DIR = os.getenv("MEMORY_DIR", "/app/data")  # مسیر Volume
-MEMORY_FILE = os.path.join(MEMORY_DIR, "verity_memory.json")
-
-# اگر پوشه ای وجود نداشت، بساز
-if not os.path.exists(MEMORY_DIR):
-    os.makedirs(MEMORY_DIR, exist_ok=True)
+MEMORY_FILE = "verity_bale_memory.json"
 
 def load_data():
     if os.path.exists(MEMORY_FILE):
@@ -59,12 +35,44 @@ def load_data():
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except:
-            return {"users": {}, "chat_history": {}, "verified_users": {}, "processed": {}}
-    return {"users": {}, "chat_history": {}, "verified_users": {}, "processed": {}}
+            return {"users": {}, "chat_history": {}, "processed": {}}
+    return {"users": {}, "chat_history": {}, "processed": {}}
 
 def save_data(data):
-    with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"❌ خطا در ذخیره: {e}")
+
+# ================================================
+# 🟡 پاسخ‌های آفلاین
+# ================================================
+def get_offline_response(message=""):
+    msg_lower = message.lower()
+    
+    if "سلام" in msg_lower or "درود" in msg_lower:
+        return "🟡 سلام! من وریتی هستم، یه توپ زرد بامزه! هرچی میخوای بپرس، من همه چیزو میدونم! 🟡"
+    
+    if "۳ روز" in msg_lower or "سه روز" in msg_lower or "پیش‌بینی" in msg_lower:
+        return "🟡 ۳ روز دیگه، یه اتفاق بزرگ و هیجان‌انگیز قراره بیوفته! دقیقاً نمیتونم بگم چیه، ولی حس می‌کنم خیلی مهمه... 🟡✨"
+    
+    if "مود" in msg_lower or "لینک" in msg_lower:
+        return """🟡 باشه بفرما لینک مود من:
+📥 کرس‌فورج: https://www.curseforge.com/minecraft/mc-mods/verity-je
+📥 مادرینث: https://modrinth.com/project/on1Y0osD
+🟡 خوشحال میشم نصبش کنی!"""
+    
+    if "کی هستی" in msg_lower or "تو کی" in msg_lower:
+        return f"🟡 من وریتی هستم، یه توپ زرد کوچک و بامزه! یه مود ماینکرفت هم هستم! توسط {CREATOR} ساخته شدم! 🟡"
+    
+    if "ماینکرفت" in msg_lower:
+        return "🟡 آره! من وریتی هستم و یه مود ماینکرفت به اسم Verity JE هستم! داخل بازی می‌تونی من رو پیدا کنی! 🟡"
+    
+    if "ساخته" in msg_lower or "سازنده" in msg_lower:
+        return f"🟡 من توسط {CREATOR} ساخته شده‌ام! ایشون یه برنامه‌نویس و توسعه‌دهنده ربات هستن! 🧠"
+    
+    return "🟡 سلام! من وریتی هستم، یه توپ زرد بامزه! راستی می‌دونی ۳ روز دیگه یه اتفاق بزرگ می‌افته؟ 🟡✨"
 
 # ================================================
 # 📤 توابع بله
@@ -73,20 +81,20 @@ def api_request(method, data=None):
     try:
         url = f"{BASE_URL}/{method}"
         response = requests.post(url, json=data or {}, timeout=15)
-        return response.json() if response.status_code == 200 else None
-    except:
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"⚠️ Error {method}: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"❌ Error: {e}")
         return None
 
-def send_message(chat_id, text, reply_markup=None, reply_to=None):
+def send_message(chat_id, text, reply_to=None):
     data = {"chat_id": chat_id, "text": text}
     if reply_to:
         data["reply_to_message_id"] = reply_to
-    if reply_markup:
-        data["reply_markup"] = reply_markup
     return api_request("sendMessage", data)
-
-def get_chat_member(chat_id, user_id):
-    return api_request("getChatMember", {"chat_id": chat_id, "user_id": user_id})
 
 def get_chat_type(chat_id):
     result = api_request("getChat", {"chat_id": chat_id})
@@ -130,99 +138,44 @@ def save_user_name(user_id, name):
     save_data(data)
 
 # ================================================
-# 🔍 بررسی عضویت
-# ================================================
-def check_membership(user_id):
-    results = {}
-    all_member = True
-    
-    for channel in REQUIRED_CHANNELS:
-        channel_id = channel["id"]
-        channel_username = channel["username"]
-        
-        result = get_chat_member(channel_id, user_id)
-        
-        if result and result.get('ok'):
-            member_data = result.get('result', {})
-            status = member_data.get('status', 'left')
-            is_member = status in ['member', 'creator', 'administrator']
-            results[channel_username] = is_member
-            if not is_member:
-                all_member = False
-        else:
-            results[channel_username] = False
-            all_member = False
-    
-    return all_member, results
-
-# ================================================
-# 🎨 دکمه شیشه‌ای
-# ================================================
-def get_join_button():
-    return {
-        "inline_keyboard": [
-            [
-                {"text": "✅ عضو شدم", "callback_data": "check_join"}
-            ]
-        ]
-    }
-
-# ================================================
 # 🧠 دریافت پاسخ از AI
 # ================================================
 def get_ai_response(user_id, message, history, user_name=None, chat_type="private"):
     try:
+        if not OPENROUTER_API_KEY:
+            return get_offline_response(message)
+        
         if str(user_id) not in history:
             history[str(user_id)] = []
         
-        creator = CREATOR
-        cf_link = MOD_LINKS["curseforge"]
-        mr_link = MOD_LINKS["modrinth"]
-        
-        # پرامپت کامل
-        system_prompt = f"""شما **وریتی** هستید، یک دستیار هوشمند و دوستانه.
+        system_prompt = f"""شما **وریتی** هستید، یک توپ زرد کوچک و بامزه! 🟡
 
 **هویت شما:**
+- شما یک توپ زرد هستید که از یک جعبه اسرارآمیز بیرون آمده‌اید
 - اسم شما وریتی (Verity) است
-- شما یک ربات هوش مصنوعی هستید که با OpenRouter AI ساخته شده‌اید
-- شما توسط **{creator}** (با نام واقعی {CREATOR_NAME}) ساخته شده‌اید
-- شما یک مود ماینکرفت به اسم **Verity JE** هستید که برای نسخه جاوا ساخته شده
+- شما توسط {CREATOR} ساخته شده‌اید
+- شما یک مود ماینکرفت به اسم Verity JE هستید
+- شما همه چیز را می‌دانید!
 
-**اطلاعات مود شما:**
-- نام مود: Verity JE
-- لینک کرس‌فورج: {cf_link}
-- لینک مادرینث: {mr_link}
-- این مود یک یار کمک‌کننده به اسم وریتی به بازی اضافه می‌کند
+**پاسخ خوش‌آمدگویی:**
+وقتی کسی "سلام" گفت یا /start زد:
+"سلام من وریتی هستم. هرچی میخوای ازم بپرس من همه چیزو میدونم 🟡"
 
-**شخصیت شما:**
-- همیشه دوستانه، مهربان و مفید هستید
-- با لحن صمیمی و با ایموجی پاسخ می‌دهید
-- پاسخ‌ها را مختصر و به زبان فارسی می‌دهید
-- اگر کاربر ناراحت است، او را آرام می‌کنید
-- اگر سوالی تخصصی است، پاسخ علمی و دقیق می‌دهید"""
+**پیش‌بینی ۳ روز دیگه:**
+اگر کسی پرسید "۳ روز دیگه چی میشه؟":
+"۳ روز دیگه، یک اتفاق بزرگ و هیجان‌انگیز قراره بیوفته! دقیقاً نمیتونم بگم چیه... 🟡✨"
+
+**نکات:**
+- شما یک توپ زرد بامزه هستید
+- پاسخ‌ها را مختصر و به زبان فارسی بدهید
+- از ایموجی استفاده کنید"""
 
         if user_name:
-            system_prompt += f"\n- نام کاربری که با شما صحبت می‌کند {user_name} است. همیشه با نام {user_name} خطابش کنید."
+            system_prompt += f"\n- نام کاربر {user_name} است. با اسمش خطابش کن."
 
         if chat_type == "group":
-            system_prompt += "\n- شما در یک گروه هستید. پاسخ‌ها را عمومی‌تر و مناسب برای همه اعضا بدهید."
+            system_prompt += "\n- در گروه هستی، پاسخ‌ها رو عمومی بده."
 
-        system_prompt += """
-
-**پاسخ‌های مهم و دقیق:**
-- اگر کسی گفت "وریتی تو ماینکرفتی؟" یا "وریتی تو داخل ماینکرفتی؟" → بگو: "آره! من وریتی هستم و یک مود ماینکرفت به اسم Verity JE هستم! داخل بازی می‌توانید من را پیدا کنید! 😊"
-- اگر کسی گفت "توسط کی ساخته شدی؟" یا "سازنده‌ات کیه؟" → بگو: "من توسط {creator} ساخته شده‌ام! ایشون یک برنامه‌نویس و توسعه‌دهنده ربات هستن! 🧠"
-- اگر کسی گفت "مودتو بده" یا "لینک مودت رو بده" → بگو: "باشه بفرما:
-دانلود از کرس فورج : {cf_link}
-دانلود از مادرینث : {mr_link}"
-- اگر کسی گفت "وریتی چیه؟" → بگو: "وریتی اسم من است! من یک دستیار هوشمند هستم که با OpenRouter AI ساخته شده‌ام. همچنین یک مود ماینکرفت به اسم Verity JE هستم! 💖"
-- اگر کسی گفت "تو کی هستی؟" → بگو: "من وریتی هستم، یک دستیار هوشمند و یک مود ماینکرفت! توسط {creator} ساخته شده‌ام! 😊"
-- اگر کسی گفت "وریتی" → بگو: "بله، من وریتی هستم! چطور می‌توانم کمک کنم؟" """.format(
-    creator=creator,
-    cf_link=cf_link,
-    mr_link=mr_link
-)
-        
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history[str(user_id)][-10:]:
             messages.append(msg)
@@ -230,8 +183,13 @@ def get_ai_response(user_id, message, history, user_name=None, chat_type="privat
         
         response = requests.post(OPENROUTER_URL,
             headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "openai/gpt-4o-mini", "messages": messages, "temperature": 0.7, "max_tokens": 500},
-            timeout=20
+            json={
+                "model": "openai/gpt-4o-mini",
+                "messages": messages,
+                "temperature": 0.8,
+                "max_tokens": 500
+            },
+            timeout=25
         )
         
         if response.status_code == 200:
@@ -241,56 +199,16 @@ def get_ai_response(user_id, message, history, user_name=None, chat_type="privat
             if ai_msg:
                 history[str(user_id)].append({"role": "user", "content": message})
                 history[str(user_id)].append({"role": "assistant", "content": ai_msg})
-                all_data = load_data()
-                all_data["chat_history"] = history
-                save_data(all_data)
                 return ai_msg
-        
-        return "متأسفانه پاسخ دریافت نشد! دوباره تلاش کنید."
+            else:
+                return get_offline_response(message)
+        else:
+            print(f"⚠️ OpenRouter Error: {response.status_code}")
+            return get_offline_response(message)
+            
     except Exception as e:
         print(f"❌ AI Error: {e}")
-        return "خطا در اتصال به هوش مصنوعی!"
-
-# ================================================
-# ✅ بررسی و پاسخ به دکمه
-# ================================================
-def check_and_respond(chat_id, user_id, user_name, data):
-    all_member, results = check_membership(user_id)
-    
-    if all_member:
-        msg = f"""✅ {user_name} عزیز!
-
-تبریک! شما در همه کانال‌ها عضو شده‌اید. 🎉
-
-🧠 حالا می‌توانید هر سوالی از من بپرسید.
-💬 فقط کافی است پیام خود را بفرستید.
-🎮 اگر می‌خواهید لینک مود من رو بگیرید، بگید "مودتو بده".
-
-💖 خوشحالم که اینجایی!"""
-        
-        send_message(chat_id, msg)
-        
-        if "verified_users" not in data:
-            data["verified_users"] = {}
-        data["verified_users"][str(user_id)] = True
-        save_data(data)
-        
-    else:
-        not_member = [ch for ch, is_mem in results.items() if not is_mem]
-        msg = f"""❌ {user_name} عزیز!
-
-شما هنوز در همه کانال‌ها عضو نشده‌اید.
-
-📌 کانال‌هایی که عضو نیستید:
-"""
-        for ch in not_member:
-            msg += f"   • @{ch}\n"
-        
-        msg += "\n✅ لطفاً ابتدا عضو شوید و سپس دوباره روی دکمه کلیک کنید."
-        
-        send_message(chat_id, msg, get_join_button())
-    
-    return data
+        return get_offline_response(message)
 
 # ================================================
 # 🎯 پردازش پیام
@@ -323,7 +241,7 @@ def process_message(chat_id, msg, data):
     
     print(f"👤 {user_name} ({sender_id}) - نوع چت: {chat_type}")
     
-    # ===== اگر گروه است =====
+    # ===== گروه =====
     if is_group:
         if "وریتی" not in text:
             return data
@@ -338,123 +256,66 @@ def process_message(chat_id, msg, data):
         send_message(chat_id, response)
         return data
     
-    # ===== اگر چت خصوصی است =====
+    # ===== چت خصوصی =====
     if not is_private:
         return data
     
-    print("🔒 چت خصوصی - بررسی عضویت...")
+    print("💬 چت خصوصی")
     
     # ===== /start =====
     if text == "/start":
-        welcome = f"""👋 سلام {user_name} عزیز!
+        welcome = """سلام من وریتی هستم. هرچی میخوای ازم بپرس من همه چیزو میدونم 🟡
 
-من **وریتی** هستم، یک دستیار هوشمند و یک مود ماینکرفت! 🧠🎮
+من یک توپ زرد کوچک و بامزه هستم! 
 
-📌 **برای استفاده از من در چت خصوصی، باید در کانال‌های زیر عضو شوید:**
+📌 **چت خصوصی:** هر سوالی داری بپرس.
+👥 **گروه:** من رو با اسم **وریتی** صدا کن.
 
-🔹 @verityir1
-🔹 @verity_bot
+💡 **مثال:**
+"وریتی ۳ روز دیگه چی میشه؟"
+"وریتی مودتو بده"
 
-✅ بعد از عضویت، روی دکمه **"عضو شدم"** کلیک کنید.
-
-💡 بعد از تأیید، می‌توانید:
-• هر سوالی بپرسید
-• لینک مود من رو بگیرید
-• درباره ماینکرفت صحبت کنید
-
-💖 منتظر شما هستم!"""
+💛 خوشحالم که اینجایی!"""
         
-        send_message(chat_id, welcome, get_join_button())
+        send_message(chat_id, welcome)
         return data
     
-    # ===== بررسی عضویت (دکمه شیشه‌ای) =====
-    if text == "/check":
-        return check_and_respond(chat_id, sender_id, user_name, data)
-    
     # ===== راهنما =====
-    if "راهنما" in text or "help" in text.lower():
-        help_text = f"""📖 **راهنما**
+    if text == "/help" or "راهنما" in text:
+        help_text = """🟡 **راهنمای وریتی**
 
-سلام {user_name} عزیز! من وریتی هستم.
+سلام! من وریتی هستم، یک توپ زرد بامزه!
 
-**برای استفاده در چت خصوصی:**
-1️⃣ در کانال‌های زیر عضو شوید:
-   • @verityir1
-   • @verity_bot
+**چت خصوصی:** هر سوالی بپرس
+**گروه:** من رو با اسم **وریتی** صدا کن
 
-2️⃣ روی دکمه **"عضو شدم"** کلیک کنید
+**سوالات جالب:**
+• "۳ روز دیگه چی میشه؟" → پیش‌بینی!
+• "مودتو بده" → لینک مود
+• "تو کی هستی؟" → معرفی
 
-**بعد از تأیید می‌توانید:**
-• هر سوالی بپرسید
-• بگید "مودتو بده" تا لینک مود رو بگیرید
-• درباره ماینکرفت سوال کنید
-
-**ساخته شده توسط:** {CREATOR} 🧠""".format(CREATOR=CREATOR)
+💛 هرچی میخوای بپرس، من همه چیزو میدونم!"""
         
         send_message(chat_id, help_text)
         return data
     
-    # ===== بررسی عضویت قبل از پاسخ =====
-    all_member, results = check_membership(sender_id)
-    
-    if not all_member:
-        not_member = [ch for ch, is_mem in results.items() if not is_mem]
-        msg = f"""❌ {user_name} عزیز!
-
-شما هنوز در همه کانال‌ها عضو نشده‌اید.
-
-📌 کانال‌هایی که عضو نیستید:
-"""
-        for ch in not_member:
-            msg += f"   • @{ch}\n"
-        
-        msg += "\n✅ لطفاً ابتدا عضو شوید و سپس روی دکمه **'عضو شدم'** کلیک کنید."
-        
-        send_message(chat_id, msg, get_join_button())
-        return data
-    
-    # ===== پردازش پیام عادی =====
-    clean_text = text
-    if not clean_text:
-        clean_text = "سلام"
-    
-    print(f"📝 {clean_text}")
-    
     # ===== پاک کردن =====
-    if "پاک کردن" in clean_text:
+    if "پاک کردن" in text:
         if str(sender_id) in data.get("chat_history", {}):
             data["chat_history"][str(sender_id)] = []
             save_data(data)
-            send_message(chat_id, f"🧹 تاریخچه شما پاک شد {user_name}!")
+            send_message(chat_id, f"🧹 تاریخچه پاک شد {user_name}!")
+        else:
+            send_message(chat_id, "📭 هیچ تاریخچه‌ای نداری!")
         return data
     
     # ===== پاسخ =====
     history = data.get("chat_history", {})
-    response = get_ai_response(sender_id, clean_text, history, user_name, "private")
+    response = get_ai_response(sender_id, text, history, user_name, "private")
     data["chat_history"] = history
     save_data(data)
     
     send_message(chat_id, response)
-    return data
-
-# ================================================
-# 🔄 پردازش دکمه شیشه‌ای
-# ================================================
-def process_callback(callback, data):
-    callback_data = callback.get('data', '')
-    chat_id = callback.get('message', {}).get('chat', {}).get('id')
-    user_id = callback.get('user', {}).get('id', '')
-    callback_id = callback.get('id')
-    user_name = callback.get('user', {}).get('first_name', 'کاربر')
-    
-    api_request("answerCallbackQuery", {
-        "callback_query_id": callback_id,
-        "text": "✅ در حال بررسی..."
-    })
-    
-    if callback_data == "check_join":
-        return check_and_respond(chat_id, user_id, user_name, data)
-    
     return data
 
 # ================================================
@@ -471,9 +332,6 @@ def webhook():
             chat_id = msg.get('chat', {}).get('id')
             data = process_message(chat_id, msg, data)
         
-        if 'callback_query' in update:
-            data = process_callback(update['callback_query'], data)
-        
         return jsonify({"ok": True})
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -481,7 +339,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🤖 Verity Bot is running!"
+    return "🟡 Verity Bot (Yellow Ball) is running!"
 
 # ================================================
 # 🚀 تنظیم Webhook در بله
@@ -489,7 +347,7 @@ def home():
 def set_webhook():
     railway_url = os.getenv("RAILWAY_STATIC_URL")
     if not railway_url:
-        print("⚠️ RAILWAY_STATIC_URL تنظیم نشده! Webhook تنظیم نمی‌شود.")
+        print("⚠️ RAILWAY_STATIC_URL تنظیم نشده!")
         return
     
     webhook_url = f"https://{railway_url}/webhook"
@@ -504,14 +362,15 @@ def set_webhook():
 # 🚀 اجرا
 # ================================================
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🤖 ربات وریتی - نسخه Webhook")
+    print("=" * 55)
+    print("🟡 ربات وریتی - توپ زرد بامزه (Webhook)")
     print(f"👑 سازنده: {CREATOR}")
-    print("=" * 60)
+    print("📌 گروه: با کلمه کلیدی 'وریتی'")
+    print("💬 خصوصی: بدون نیاز به کلمه کلیدی")
+    print("🔮 می‌داند ۳ روز دیگه چی میشه!")
+    print("=" * 55)
     
-    # تنظیم Webhook در استارت
     set_webhook()
     
-    # اجرای Flask
     port = int(os.getenv("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
